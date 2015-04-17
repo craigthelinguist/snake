@@ -29,7 +29,9 @@ typedef struct snake {
 
 // function declarations
 void draw_snake (snake_t *snake);
-int handle_input (snake_t *snake);
+void draw_wall ();
+snake_t *init_snake (snake_t *prev, int row, int col);
+void move_snake (snake_t *head, int newRow, int newCol);
 
 void draw_snake (snake_t *snake)
 {
