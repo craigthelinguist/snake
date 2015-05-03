@@ -57,14 +57,15 @@ void draw_wall ();
 
 // Snake-related functions.
 snake_t *init_snake (snake_t *prev, int row, int col);
-int move_snake (snake_t *head, Direction dir);
+void move_snake (snake_t *head, Direction dir);
+int touching (snake_t *head, int row, int col);
 
 // Time-related functions.
 long int timems (void);
 long int update_delay(void);
 
 // Input-related functions.
-void update_direction (Direction *dir);
+int process_input(Direction snake_dir, Direction *queued_dir);
 
 // Gui-related functions.
 void setup_gui(void);
@@ -78,7 +79,6 @@ void setup_gui(void);
 // dimensions of the screen.
 int ROWS = 0;
 int COLS = 0;
-
 
 
 // ------------------------------------------------------------
@@ -127,9 +127,9 @@ void setup_gui ()
   keypad(stdscr, TRUE);
 
   // set input delay so it is non-blocking.
-  timeout(1);
-
+  timeout(0);
 }
+
 /*  Draw the snake on the default ncurses window. */
 void draw_snake (snake_t *snake)
 {
@@ -162,6 +162,26 @@ void draw_wall ()
   attroff(COLOR_WALL);
 }
 
+/*  Draw the queued direction of the snake. */
+void draw_direction (Direction queued_dir)
+{
+    char c;
+    switch (queued_dir) {
+      case NORTH:
+        c = 'N';
+        break;
+      case SOUTH:
+        c = 'S';
+        break;
+      case WEST:
+        c = 'W';
+        break;
+      case EAST:
+        c = 'E';
+        break;
+    }
+    mvaddch(2, 45, c);
+}
 
 
 // ------------------------------------------------------------
@@ -170,7 +190,7 @@ void draw_wall ()
 
 /*  Create and allocate a segment of snake at the specified (row,col)
     position. */
-snake_t *init_snake(snake_t *prev, int row, int col)
+snake_t *init_snake (snake_t *prev, int row, int col)
 {
   snake_t *snake = (snake_t *) malloc(sizeof (snake_t));
   snake->row = row; snake->col = col;
@@ -178,10 +198,21 @@ snake_t *init_snake(snake_t *prev, int row, int col)
   return snake;
 }
 
+/*  Check to see if the body of the snake is touching the specified
+    row and col. */
+int touching (snake_t *head, int row, int col)
+{
+  while (head != NULL) {
+    if (head->row == row && head->col == col) return 1;
+    head = head->next;
+  }
+  return 0;
+}
+
 /*  Move the snake one step in the specified direction. Returns a non-zero
     value if the snake moved successfully without touching itself or a wall.
     Otherwise returns zero.  */
-int move_snake(snake_t *head, Direction dir) {
+void move_snake (snake_t *head, Direction dir) {
 
   // figure out where the snake should now be.
   int newRow = head->row;
@@ -204,19 +235,18 @@ int move_snake(snake_t *head, Direction dir) {
       break;
   }
 
-  // update each segment of the head/
-  int oldRow, oldCol;
+  // move the snake
+  int currRow, currCol;
   while (head != NULL) {
-    oldRow = head->row;
-    oldCol = head->col;
+    currRow = head->row;
+    currCol = head->col;
     head->row = newRow;
     head->col = newCol;
-    newRow = oldRow;
-    newCol = oldCol;
+    newRow = currRow;
+    newCol = currCol;
     head = head->next;
   }
 
-  return 1;
 }
 
 
@@ -228,33 +258,34 @@ int move_snake(snake_t *head, Direction dir) {
 /*  Process user input. Updates the direction of the snake depending
     on what key the user presses. Will return a non-zero value if the
     program should terminate. Otherwise it will return zero. */
-int process_input(Direction *dir)
+int process_input(Direction snake_dir, Direction *queued_dir)
 {
+    // get key code
     int in = getch();
-    switch (in) {
 
-      case KEY_UP:
-        if (*dir != SOUTH) *dir = NORTH;
-        break;
+    // check if user pushed escape
+    if (in == KEY_ESC) return 1;
 
-      case KEY_DOWN:
-        if (*dir != NORTH) *dir = SOUTH;
-        break;
+    // get direction the user pushed
+    Direction d2;
+    if (in == KEY_UP) d2 = NORTH;
+    else if (in == KEY_DOWN) d2 = SOUTH;
+    else if (in == KEY_LEFT) d2 = WEST;
+    else if (in == KEY_RIGHT) d2 = EAST;
+    else return 0;
 
-      case KEY_RIGHT:
-        if (*dir != WEST) *dir = EAST;
-        break;
-
-      case KEY_LEFT:
-        if (*dir != EAST) *dir = WEST;
-        break;
-
-      case KEY_ESC:
-        return 1;
-
-    }
+    // update queued direction, if snake can turn in that direction
+    if (!opposites(snake_dir, d2)) *queued_dir = d2;
     return 0;
+}
 
+int opposites (Direction d1, Direction d2)
+{
+  if (d1 == NORTH && d2 == SOUTH) return 1;
+  if (d1 == SOUTH && d2 == NORTH) return 1;
+  if (d1 == WEST && d2 == EAST) return 1;
+  if (d1 == EAST && d2 == WEST) return 1;
+  return 0;
 }
 
 
@@ -272,16 +303,20 @@ int main (int argc, char *argv[])
   snake_t *snake = init_snake(NULL, WALL_HT/2, WALL_WD/2);
   snake_t *seg2 = init_snake(snake, snake->row+1, snake->col);
   snake_t *seg3 = init_snake(seg2, seg2->row+1, seg2->col);
+  snake_t *seg4 = init_snake(seg3, seg3->row+1, seg3->col);
+  snake_t *seg5 = init_snake(seg4, seg4->row+1, seg4->col);
 
   // remember direction of snake, last time step.
   long int lastUpdate = timems();
-  Direction dir = NORTH;
+  Direction snake_dir = NORTH;
+  Direction queued_dir = NORTH;
 
   while (1) {
 
     // process user input. If non-zero value is returned, then the programme
     // should terminate.
-    if (process_input(&dir)) break;
+    if (process_input(snake_dir, &queued_dir)) break;
+    draw_direction(queued_dir);
 
     // check if enough time has elapsed to warrant updating the snake.
     long int currTime = timems();
@@ -290,13 +325,16 @@ int main (int argc, char *argv[])
 
     // create screen. move the snake. redraw the scene.
     clear();
-    if (move_snake(snake, dir));
+    snake_dir = queued_dir;
+    move_snake(snake, snake_dir);
     draw_snake(snake);
     draw_wall();
     refresh();
 
-    // if head of snake would be inside of its body, game over
-    // if head of snake would be inside of a wall, game over
+    // if the snake would be inside of its body or a wall, game over.
+    // nb: if the snake tries to move into a wall it ends up moving onto itself
+    // so this handles both cases.
+    if (touching(snake->next, snake->row, snake->col)) break;
 
     // if head of snake is over food, eat food, add to body of snake,
     // respawn a new piece of food
