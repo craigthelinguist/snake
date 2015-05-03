@@ -18,6 +18,7 @@
 // colour pairs used in drawing
 #define COLOR_SNAKE COLOR_PAIR(1)
 #define COLOR_WALL COLOR_PAIR(2)
+#define COLOR_FOOD COLOR_PAIR(3)
 
 // boundaries of the game
 #define WALL_WD 40
@@ -40,12 +41,14 @@ typedef enum {NORTH, EAST, SOUTH, WEST} Direction;
 
 // Each piece of the snake is the element of a linked list.
 typedef struct snake {
-  int row;
-  int col;
+  struct point *loc;
   struct snake *next;
 } snake_t;
 
-
+typedef struct point {
+  int row;
+  int col;
+} point;
 
 // ------------------------------------------------------------
 // Function declarations.
@@ -54,11 +57,15 @@ typedef struct snake {
 // Drawing functions.
 void draw_snake (snake_t *snake);
 void draw_wall ();
+void draw_food (point *p);
 
 // Snake-related functions.
 snake_t *init_snake (snake_t *prev, int row, int col);
 void move_snake (snake_t *head, Direction dir);
-int touching (snake_t *head, int row, int col);
+int touching (snake_t *head, point *p);
+
+// Food-related functions.
+point randomise_food ();
 
 // Time-related functions.
 long int timems (void);
@@ -119,6 +126,7 @@ void setup_gui ()
   start_color();
   init_pair(1, COLOR_WHITE, COLOR_WHITE); // snake colour
   init_pair(2, COLOR_CYAN, COLOR_CYAN); // wall colour
+  init_pair(3, COLOR_RED, COLOR_RED); // food colour
 
   // store dimensions of the screen.
   getmaxyx(stdscr, ROWS, COLS);
@@ -128,6 +136,10 @@ void setup_gui ()
 
   // set input delay so it is non-blocking.
   timeout(0);
+
+  // seed rand
+  srand(time(NULL));
+
 }
 
 /*  Draw the snake on the default ncurses window. */
@@ -135,10 +147,17 @@ void draw_snake (snake_t *snake)
 {
   attron(COLOR_SNAKE);
   while (snake != NULL) {
-    mvaddch(snake->row, snake->col, '*');
+    mvaddch(snake->loc->row, snake->loc->col, '*');
     snake = snake->next;
   }
   attroff(COLOR_SNAKE);
+}
+
+void draw_food (point *pt)
+{
+  attron(COLOR_FOOD);
+  mvaddch(pt->row, pt->col, '*');
+  attroff(COLOR_FOOD);
 }
 
 /*  Draw the wall on the default ncurses window. */
@@ -184,6 +203,7 @@ void draw_direction (Direction queued_dir)
 }
 
 
+
 // ------------------------------------------------------------
 // Snake functions.
 // ------------------------------------------------------------
@@ -193,17 +213,19 @@ void draw_direction (Direction queued_dir)
 snake_t *init_snake (snake_t *prev, int row, int col)
 {
   snake_t *snake = (snake_t *) malloc(sizeof (snake_t));
-  snake->row = row; snake->col = col;
+  point *p = (point *) malloc(sizeof (point));
+  p->row = row; p->col = col;
+  snake->loc = p;
   if (prev != NULL) prev->next = snake;
   return snake;
 }
 
 /*  Check to see if the body of the snake is touching the specified
     row and col. */
-int touching (snake_t *head, int row, int col)
+int touching (snake_t *head, point *p)
 {
   while (head != NULL) {
-    if (head->row == row && head->col == col) return 1;
+    if (head->loc->row == p->row && head->loc->col == p->col) return 1;
     head = head->next;
   }
   return 0;
@@ -215,33 +237,33 @@ int touching (snake_t *head, int row, int col)
 void move_snake (snake_t *head, Direction dir) {
 
   // figure out where the snake should now be.
-  int newRow = head->row;
-  int newCol = head->col;
+  int newRow = head->loc->row;
+  int newCol = head->loc->col;
   switch (dir) {
     case NORTH:
-      newRow = MAX(head->row-1, 1);
+      newRow = MAX(head->loc->row-1, 1);
       break;
 
     case SOUTH:
-      newRow = MIN(head->row+1, WALL_HT-2);
+      newRow = MIN(head->loc->row+1, WALL_HT-2);
       break;
 
     case WEST:
-      newCol = MAX(head->col-1, 1);
+      newCol = MAX(head->loc->col-1, 1);
       break;
 
     case EAST:
-      newCol = MIN(head->col+1, WALL_WD-2);
+      newCol = MIN(head->loc->col+1, WALL_WD-2);
       break;
   }
 
   // move the snake
   int currRow, currCol;
   while (head != NULL) {
-    currRow = head->row;
-    currCol = head->col;
-    head->row = newRow;
-    head->col = newCol;
+    currRow = head->loc->row;
+    currCol = head->loc->col;
+    head->loc->row = newRow;
+    head->loc->col = newCol;
     newRow = currRow;
     newCol = currCol;
     head = head->next;
@@ -249,6 +271,17 @@ void move_snake (snake_t *head, Direction dir) {
 
 }
 
+point randomise_food (snake_t *head)
+{
+  int row, col;
+  point p;
+  do {
+    int row = rand() % (WALL_HT-2) + 1;
+    int col = rand() % (WALL_WD-2) + 1;
+    p.row = row; p.col = col;
+  } while (touching(head, &p));
+  return p;
+}
 
 
 // ------------------------------------------------------------
@@ -301,15 +334,18 @@ int main (int argc, char *argv[])
 
   // initialise snake.
   snake_t *snake = init_snake(NULL, WALL_HT/2, WALL_WD/2);
-  snake_t *seg2 = init_snake(snake, snake->row+1, snake->col);
-  snake_t *seg3 = init_snake(seg2, seg2->row+1, seg2->col);
-  snake_t *seg4 = init_snake(seg3, seg3->row+1, seg3->col);
-  snake_t *seg5 = init_snake(seg4, seg4->row+1, seg4->col);
+  snake_t *seg2 = init_snake(snake, snake->loc->row+1, snake->loc->col);
+  snake_t *seg3 = init_snake(seg2, seg2->loc->row+1, seg2->loc->col);
+  snake_t *seg4 = init_snake(seg3, seg3->loc->row+1, seg3->loc->col);
+  snake_t *seg5 = init_snake(seg4, seg4->loc->row+1, seg4->loc->col);
 
   // remember direction of snake, last time step.
   long int lastUpdate = timems();
   Direction snake_dir = NORTH;
   Direction queued_dir = NORTH;
+
+  // position of food
+  point food = randomise_food(snake);
 
   while (1) {
 
@@ -323,18 +359,27 @@ int main (int argc, char *argv[])
     if (currTime - lastUpdate < update_delay()) continue;
     lastUpdate = currTime;
 
-    // create screen. move the snake. redraw the scene.
-    clear();
+    // change direction and move the snake.
     snake_dir = queued_dir;
     move_snake(snake, snake_dir);
-    draw_snake(snake);
-    draw_wall();
-    refresh();
 
     // if the snake would be inside of its body or a wall, game over.
     // nb: if the snake tries to move into a wall it ends up moving onto itself
     // so this handles both cases.
-    if (touching(snake->next, snake->row, snake->col)) break;
+    if (touching(snake->next, snake->loc)) break;
+
+    // check if snake has eaten food.
+    if (touching(snake, &food)) {
+      food = randomise_food(snake);
+    }
+
+    // clear screen and redraw.
+    clear();
+    draw_snake(snake);
+    draw_food(&food);
+    draw_wall();
+    refresh();
+
 
     // if head of snake is over food, eat food, add to body of snake,
     // respawn a new piece of food
