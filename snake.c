@@ -7,6 +7,7 @@
 #include <ncurses.h>
 #include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 
 
@@ -86,6 +87,7 @@ void setup_gui(void);
 // dimensions of the screen.
 int ROWS = 0;
 int COLS = 0;
+int DIFFICULTY = 0;
 
 
 // ------------------------------------------------------------
@@ -104,7 +106,9 @@ long int timems (void)
 /*  Get the amount of time to wait between steps of the game world. This should
     increase with difficulty. */
 long int update_delay () {
-  return 250;
+  long int delay = 300 - 20*DIFFICULTY;
+  if (delay < 20) return 20;
+  return delay;
 }
 
 
@@ -271,6 +275,7 @@ void move_snake (snake_t *head, Direction dir) {
 
 }
 
+/*  Construct a random point within the boundaries of the game. */
 point randomise_food (snake_t *head)
 {
   int row, col;
@@ -327,9 +332,30 @@ int opposites (Direction d1, Direction d2)
 // Main.
 // ------------------------------------------------------------
 
+void parse_args (int argc, char *argv[])
+{
+  // default difficulty
+  if (argc == 1) {
+    DIFFICULTY = 1;
+    return;  
+  }
+
+  // parse difficulty
+  if (argc == 2) {
+    DIFFICULTY = atoi(argv[1]);
+    printf("diff: %li\n", DIFFICULTY);
+    return;
+  }
+
+  // error.
+  printf("Bad number of arguments.\n");
+  abort();
+}
+
 int main (int argc, char *argv[])
 {
 
+  parse_args(argc, argv);
   setup_gui();
 
   // initialise snake.
