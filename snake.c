@@ -62,7 +62,7 @@ void draw_food (point *p);
 
 // Snake-related functions.
 snake_t *init_snake (snake_t *prev, int row, int col);
-void move_snake (snake_t *head, Direction dir);
+void move_snake (snake_t **head, Direction dir, int grow_snake);
 int touching (snake_t *head, point *p);
 
 // Food-related functions.
@@ -213,14 +213,15 @@ void draw_direction (Direction queued_dir)
 // ------------------------------------------------------------
 
 /*  Create and allocate a segment of snake at the specified (row,col)
-    position. */
-snake_t *init_snake (snake_t *prev, int row, int col)
+    position. If next is specified, then that will be the next pointer
+    in the initialised segment of snake. */
+snake_t *init_snake (snake_t *next, int row, int col)
 {
   snake_t *snake = (snake_t *) malloc(sizeof (snake_t));
   point *p = (point *) malloc(sizeof (point));
   p->row = row; p->col = col;
   snake->loc = p;
-  if (prev != NULL) prev->next = snake;
+  if (next != NULL) snake->next = next;
   return snake;
 }
 
@@ -238,9 +239,10 @@ int touching (snake_t *head, point *p)
 /*  Move the snake one step in the specified direction. Returns a non-zero
     value if the snake moved successfully without touching itself or a wall.
     Otherwise returns zero.  */
-void move_snake (snake_t *head, Direction dir) {
-
+void move_snake (snake_t **snake, Direction dir, int should_grow) {
+  
   // figure out where the snake should now be.
+  snake_t *head = *snake;
   int newRow = head->loc->row;
   int newCol = head->loc->col;
   switch (dir) {
@@ -260,8 +262,15 @@ void move_snake (snake_t *head, Direction dir) {
       newCol = MIN(head->loc->col+1, WALL_WD-2);
       break;
   }
-
-  // move the snake
+  
+  // If the snake has grown, prepend the new segment to the head of the snake.
+  if (should_grow) {
+    snake_t *new_head = init_snake(head, newRow, newCol);
+    *snake = new_head;
+    return;
+  }
+  
+  // Otherwise, shift each segment of the snake along one.
   int currRow, currCol;
   while (head != NULL) {
     currRow = head->loc->row;
@@ -343,7 +352,7 @@ void parse_args (int argc, char *argv[])
   // parse difficulty
   if (argc == 2) {
     DIFFICULTY = atoi(argv[1]);
-    printf("diff: %li\n", DIFFICULTY);
+    printf("diff: %d\n", DIFFICULTY);
     return;
   }
 
@@ -360,11 +369,9 @@ int main (int argc, char *argv[])
 
   // initialise snake.
   snake_t *snake = init_snake(NULL, WALL_HT/2, WALL_WD/2);
-  snake_t *seg2 = init_snake(snake, snake->loc->row+1, snake->loc->col);
-  snake_t *seg3 = init_snake(seg2, seg2->loc->row+1, seg2->loc->col);
-  snake_t *seg4 = init_snake(seg3, seg3->loc->row+1, seg3->loc->col);
-  snake_t *seg5 = init_snake(seg4, seg4->loc->row+1, seg4->loc->col);
-
+  snake = init_snake(snake, WALL_HT/2 + 1, WALL_WD/2);
+  snake = init_snake(snake, WALL_HT/2 + 1, WALL_WD/2);
+  
   // remember direction of snake, last time step.
   long int lastUpdate = timems();
   Direction snake_dir = NORTH;
@@ -372,6 +379,7 @@ int main (int argc, char *argv[])
 
   // position of food
   point food = randomise_food(snake);
+  int ate_food = 0;
 
   while (1) {
 
@@ -387,7 +395,8 @@ int main (int argc, char *argv[])
 
     // change direction and move the snake.
     snake_dir = queued_dir;
-    move_snake(snake, snake_dir);
+    move_snake(&snake, snake_dir, ate_food);
+    ate_food = 0;
 
     // if the snake would be inside of its body or a wall, game over.
     // nb: if the snake tries to move into a wall it ends up moving onto itself
@@ -397,6 +406,7 @@ int main (int argc, char *argv[])
     // check if snake has eaten food.
     if (touching(snake, &food)) {
       food = randomise_food(snake);
+      ate_food = 1;
     }
 
     // clear screen and redraw.
