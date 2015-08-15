@@ -21,10 +21,6 @@
 #define COLOR_WALL COLOR_PAIR(2)
 #define COLOR_FOOD COLOR_PAIR(3)
 
-// boundaries of the game
-#define WALL_WD 40
-#define WALL_HT 20
-
 // key constants
 #define KEY_ESC 27
 
@@ -41,53 +37,51 @@
 typedef enum {NORTH, EAST, SOUTH, WEST} Direction;
 
 // Each piece of the snake is the element of a linked list.
-typedef struct snake {
+struct snake {
   struct point *loc;
   struct snake *next;
-} snake_t;
+};
 
-typedef struct point {
+struct point {
   int row;
   int col;
-} point;
+};
+
+struct game_data {
+  int rows;
+  int cols;
+  int WALL_HT;
+  int WALL_WD;
+  int difficulty;
+};
 
 // ------------------------------------------------------------
 // Function declarations.
 // ------------------------------------------------------------
 
 // Drawing functions.
-void draw_snake (snake_t *snake);
-void draw_wall ();
-void draw_food (point *p);
+void draw_snake (struct snake *snake);
+void draw_wall (struct game_data *game);
+void draw_food (struct point p);
 
 // Snake-related functions.
-snake_t *init_snake (snake_t *prev, int row, int col);
-void move_snake (snake_t **head, Direction dir, int grow_snake);
-int touching (snake_t *head, point *p);
+struct snake *init_snake (struct snake *prev, int row, int col);
+void move_snake (struct game_data *game, struct snake **head, Direction dir, int grow_snake);
+int touching (struct snake *head, struct point *p);
 
 // Food-related functions.
-point randomise_food ();
+struct point randomise_food (struct game_data *game, struct snake *head);
 
 // Time-related functions.
 long int timems (void);
-long int update_delay(void);
+long int update_delay(struct game_data *);
 
 // Input-related functions.
 int process_input(Direction snake_dir, Direction *queued_dir);
 
 // Gui-related functions.
-void setup_gui(void);
+void setup_gui(struct game_data *);
 
-
-
-// ------------------------------------------------------------
-// Globals.
-// ------------------------------------------------------------
-
-// dimensions of the screen.
-int ROWS = 0;
-int COLS = 0;
-int DIFFICULTY = 0;
 
 
 // ------------------------------------------------------------
@@ -105,8 +99,8 @@ long int timems (void)
 
 /*  Get the amount of time to wait between steps of the game world. This should
     increase with difficulty. */
-long int update_delay () {
-  long int delay = 300 - 20*DIFFICULTY;
+long int update_delay (struct game_data *game) {
+  long int delay = 300 - 20*game->difficulty;
   if (delay < 20) return 20;
   return delay;
 }
@@ -118,7 +112,8 @@ long int update_delay () {
 // ------------------------------------------------------------
 
 /*  Set up and configure the gui. */
-void setup_gui ()
+void
+setup_gui (struct game_data *game)
 {
 
   // establish terminal, remove cursor.
@@ -133,7 +128,10 @@ void setup_gui ()
   init_pair(3, COLOR_RED, COLOR_RED); // food colour
 
   // store dimensions of the screen.
-  getmaxyx(stdscr, ROWS, COLS);
+  int rows, cols;
+  getmaxyx(stdscr, rows, cols);
+  game->rows = rows;
+  game->cols = cols;
 
   // allow for function keys to be registered by ncurses.
   keypad(stdscr, TRUE);
@@ -147,7 +145,7 @@ void setup_gui ()
 }
 
 /*  Draw the snake on the default ncurses window. */
-void draw_snake (snake_t *snake)
+void draw_snake (struct snake *snake)
 {
   attron(COLOR_SNAKE);
   while (snake != NULL) {
@@ -157,29 +155,29 @@ void draw_snake (snake_t *snake)
   attroff(COLOR_SNAKE);
 }
 
-void draw_food (point *pt)
+void draw_food (struct point pt)
 {
   attron(COLOR_FOOD);
-  mvaddch(pt->row, pt->col, '*');
+  mvaddch(pt.row, pt.col, '*');
   attroff(COLOR_FOOD);
 }
 
 /*  Draw the wall on the default ncurses window. */
-void draw_wall ()
+void draw_wall (struct game_data *game)
 {
   attron(COLOR_WALL);
   int i;
 
   // draw the left and right edges
-  for (i=0; i<WALL_WD; i++) {
+  for (i=0; i< game->WALL_WD; i++) {
     mvaddch(0, i, '*');
-    mvaddch(WALL_HT-1, i, '*');
+    mvaddch(game->WALL_HT-1, i, '*');
   }
 
   // draw top and bottom edges
-  for (i=1; i<WALL_HT-1; i++) {
+  for (i=1; i<game->WALL_HT-1; i++) {
     mvaddch(i, 0, '*');
-    mvaddch(i, WALL_WD-1, '*');
+    mvaddch(i, game->WALL_WD-1, '*');
   }
 
   attroff(COLOR_WALL);
@@ -215,10 +213,10 @@ void draw_direction (Direction queued_dir)
 /*  Create and allocate a segment of snake at the specified (row,col)
     position. If next is specified, then that will be the next pointer
     in the initialised segment of snake. */
-snake_t *init_snake (snake_t *next, int row, int col)
+struct snake *init_snake (struct snake *next, int row, int col)
 {
-  snake_t *snake = (snake_t *) malloc(sizeof (snake_t));
-  point *p = (point *) malloc(sizeof (point));
+  struct snake *snake = (struct snake *) malloc(sizeof (struct snake));
+  struct point *p = (struct point *) malloc(sizeof (struct point));
   p->row = row; p->col = col;
   snake->loc = p;
   if (next != NULL) snake->next = next;
@@ -227,7 +225,7 @@ snake_t *init_snake (snake_t *next, int row, int col)
 
 /*  Check to see if the body of the snake is touching the specified
     row and col. */
-int touching (snake_t *head, point *p)
+int touching (struct snake *head, struct point *p)
 {
   while (head != NULL) {
     if (head->loc->row == p->row && head->loc->col == p->col) return 1;
@@ -239,10 +237,11 @@ int touching (snake_t *head, point *p)
 /*  Move the snake one step in the specified direction. Returns a non-zero
     value if the snake moved successfully without touching itself or a wall.
     Otherwise returns zero.  */
-void move_snake (snake_t **snake, Direction dir, int should_grow) {
+void
+move_snake (struct game_data *game, struct snake **snake, Direction dir, int should_grow) {
   
   // figure out where the snake should now be.
-  snake_t *head = *snake;
+  struct snake *head = *snake;
   int newRow = head->loc->row;
   int newCol = head->loc->col;
   switch (dir) {
@@ -251,7 +250,7 @@ void move_snake (snake_t **snake, Direction dir, int should_grow) {
       break;
 
     case SOUTH:
-      newRow = MIN(head->loc->row+1, WALL_HT-2);
+      newRow = MIN(head->loc->row+1, game->WALL_HT-2);
       break;
 
     case WEST:
@@ -259,13 +258,13 @@ void move_snake (snake_t **snake, Direction dir, int should_grow) {
       break;
 
     case EAST:
-      newCol = MIN(head->loc->col+1, WALL_WD-2);
+      newCol = MIN(head->loc->col+1, game->WALL_WD-2);
       break;
   }
   
   // If the snake has grown, prepend the new segment to the head of the snake.
   if (should_grow) {
-    snake_t *new_head = init_snake(head, newRow, newCol);
+    struct snake *new_head = init_snake(head, newRow, newCol);
     *snake = new_head;
     return;
   }
@@ -285,13 +284,14 @@ void move_snake (snake_t **snake, Direction dir, int should_grow) {
 }
 
 /*  Construct a random point within the boundaries of the game. */
-point randomise_food (snake_t *head)
+struct point
+randomise_food (struct game_data *game, struct snake *head)
 {
   int row, col;
-  point p;
+  struct point p;
   do {
-    int row = rand() % (WALL_HT-2) + 1;
-    int col = rand() % (WALL_WD-2) + 1;
+    int row = rand() % (game->WALL_HT-2) + 1;
+    int col = rand() % (game->WALL_WD-2) + 1;
     p.row = row; p.col = col;
   } while (touching(head, &p));
   return p;
@@ -341,18 +341,18 @@ int opposites (Direction d1, Direction d2)
 // Main.
 // ------------------------------------------------------------
 
-void parse_args (int argc, char *argv[])
+void
+parse_args (int argc, char *argv[], struct game_data *game)
 {
   // default difficulty
   if (argc == 1) {
-    DIFFICULTY = 1;
+    game->difficulty = 1;
     return;  
   }
 
   // parse difficulty
   if (argc == 2) {
-    DIFFICULTY = atoi(argv[1]);
-    printf("diff: %d\n", DIFFICULTY);
+    game->difficulty = atoi(argv[1]);
     return;
   }
 
@@ -364,13 +364,17 @@ void parse_args (int argc, char *argv[])
 int main (int argc, char *argv[])
 {
 
-  parse_args(argc, argv);
-  setup_gui();
+  // set up game and gui.
+  struct game_data *game = malloc (sizeof (struct game_data));
+  game->WALL_WD = 20;
+  game->WALL_HT = 20;
+  parse_args(argc, argv, game);
+  setup_gui(game);
 
   // initialise snake.
-  snake_t *snake = init_snake(NULL, WALL_HT/2, WALL_WD/2);
-  snake = init_snake(snake, WALL_HT/2 + 1, WALL_WD/2);
-  snake = init_snake(snake, WALL_HT/2 + 1, WALL_WD/2);
+  struct snake *snake = init_snake(NULL, game->WALL_HT/2, game->WALL_WD/2);
+  snake = init_snake(snake, game->WALL_HT/2 + 1, game->WALL_WD/2);
+  snake = init_snake(snake, game->WALL_HT/2 + 1, game->WALL_WD/2);
   
   // remember direction of snake, last time step.
   long int lastUpdate = timems();
@@ -378,7 +382,7 @@ int main (int argc, char *argv[])
   Direction queued_dir = NORTH;
 
   // position of food
-  point food = randomise_food(snake);
+  struct point food = randomise_food(game, snake);
   int ate_food = 0;
 
   while (1) {
@@ -390,12 +394,12 @@ int main (int argc, char *argv[])
 
     // check if enough time has elapsed to warrant updating the snake.
     long int currTime = timems();
-    if (currTime - lastUpdate < update_delay()) continue;
+    if (currTime - lastUpdate < update_delay(game)) continue;
     lastUpdate = currTime;
 
     // change direction and move the snake.
     snake_dir = queued_dir;
-    move_snake(&snake, snake_dir, ate_food);
+    move_snake(game, &snake, snake_dir, ate_food);
     ate_food = 0;
 
     // if the snake would be inside of its body or a wall, game over.
@@ -405,20 +409,16 @@ int main (int argc, char *argv[])
 
     // check if snake has eaten food.
     if (touching(snake, &food)) {
-      food = randomise_food(snake);
+      food = randomise_food(game, snake);
       ate_food = 1;
     }
 
     // clear screen and redraw.
     clear();
     draw_snake(snake);
-    draw_food(&food);
-    draw_wall();
+    draw_food(food);
+    draw_wall(game);
     refresh();
-
-
-    // if head of snake is over food, eat food, add to body of snake,
-    // respawn a new piece of food
 
   }
   endwin();
