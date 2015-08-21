@@ -68,6 +68,7 @@ void draw_food (struct point p);
 struct snake *init_snake (struct snake *prev, int row, int col);
 void move_snake (struct game_data *game, struct snake **head, Direction dir, int grow_snake);
 int touching (struct snake *head, struct point *p);
+int opposites (Direction d1, Direction d2);
 
 // Food-related functions.
 struct point randomise_food (struct game_data *game, struct snake *head);

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define KEY_ESC 27
+#define KEY_ENTER 10
 
 enum item_type { SLIDER, TEXT };
 
@@ -30,8 +31,8 @@ struct menu_item {
 struct menu {
   int indent_size;
   WINDOW *window;
-  struct menu_item **elements;
-  int num_elements;
+  struct menu_item **items;
+  int num_items;
   int selection;
 };
 
@@ -62,9 +63,9 @@ make_item_text (struct menu_item *elem, char *text)
   item_text->exit = 0;
   
   // Make the elem tagged union.
-  elem = malloc(sizeof (struct menu_item));
   elem->tag = TEXT;
   elem->item.text = item_text;
+  
 };
 
   /*
@@ -114,7 +115,6 @@ make_item_slider (struct menu_item *elem, char *text, int length)
   item_slider->pos = 0;
   
   // Make the elem tagged union.
-  elem = malloc(sizeof (struct menu_item));
   elem->tag = SLIDER;
   elem->item.slider = item_slider;
 
@@ -128,19 +128,22 @@ make_item_slider (struct menu_item *elem, char *text, int length)
       responsiblity to free).
     window:
       The ncurses window that the menu is apart of.
-    elements:
-      The items which are apart of your menu.
+    items:
+      Array of pointers to item structs which are apart of your menu.
+    num_items:
+      Size of the array.
+      
   */
 void
-make_menu (struct menu *menu, WINDOW *window, struct menu_item **items)
+make_menu (struct menu *menu, WINDOW *window, struct menu_item **items, int num_items)
 {
   
   // Make the menu struct.
-  menu = malloc(sizeof (struct menu));
   menu->indent_size = 3;
   menu->window = window;
-  menu->elements = items;
-  menu->num_elements = sizeof(menu) / sizeof(menu[0]);
+  
+  menu->items = items;
+  menu->num_items = num_items;
   menu->selection = 0;
   
 }
@@ -156,7 +159,7 @@ menu_refresh (struct menu *menu)
 {
   
   // Clear window.
-  clear();
+  wclear(menu->window);
   
   // Offsets for displaying.
   int top_offset = 2;
@@ -168,13 +171,16 @@ menu_refresh (struct menu *menu)
   
   // Get the menu elements.
   WINDOW *window = menu->window;
-  struct menu_item **elems = menu->elements;
+  struct menu_item **elems = menu->items;
+  int sz = menu->num_items;
   
   // Go through each menu element, output to window.
   int i;
-  for (i=0; elems[i] != NULL; i++) {
+  for (i=0; i != sz; i++) {
+    
     struct menu_item *elem = elems[i];
     top_offset++;
+    
     switch (elem->tag) {
 
         case TEXT:
@@ -202,6 +208,8 @@ menu_refresh (struct menu *menu)
   
   // Refresh window.
   wrefresh(window);
+  
+  while (1);
   
 }
 
@@ -280,10 +288,8 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   
   int c;
   while (1) {
-    
-    // Get the character pressed and the current selection.
     c = getch();
-    elem = menu->elements[i];
+    elem = menu->items[i];
     enum item_type type = elem->tag;
     
     // Press "esc".
@@ -335,7 +341,7 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
     
     // Press "down".
     else if (c == KEY_DOWN && !engaged) {
-      if (i < menu->num_elements) i++;
+      if (i < menu->num_items) i++;
     }
     
     // Press "up".
@@ -349,9 +355,6 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   
 }
 
-/*
-
-Some testing stuff.
 
 int
 main (int argc, char *argv[])
@@ -359,15 +362,22 @@ main (int argc, char *argv[])
 	
   // establish terminal, remove cursor.
   initscr();
-  cbreak();
   noecho();
+  
+  // allow for function keys to be registered by ncurses.
+  keypad(stdscr, TRUE);
+
+  // set input delay so it is non-blocking.
+  timeout(0);
+
+  
+  nodelay(stdscr, 0);
   curs_set(FALSE);
   
-  
   // Make items.
-  struct menu_item *item1;
+  struct menu_item *item1 = malloc(sizeof (struct menu_item));
   make_item_text(item1, "Item 1");
-  struct menu_item *item2;
+  struct menu_item *item2 = malloc(sizeof (struct menu_item));
   make_item_exit(item2, "Exit");
   struct menu_item *items[] = { item1, item2 };
   
@@ -376,13 +386,15 @@ main (int argc, char *argv[])
   window = newwin(30, 30, 0, 0);
   
   // Make menu.
-  struct menu *menu;
-  make_menu(menu, window, items);
+  struct menu *menu = malloc(sizeof (struct menu));
+  int num_items = sizeof(items) / sizeof(items[0]);
+  make_menu(menu, window, items, num_items);
   
-  struct menu_event *evnt;
-  run_menu(menu, evnt);
-  
-
+  // Run the menu.
+  struct menu_event *event = malloc(sizeof (struct menu_event));
+  while(1) {
+    menu_refresh(menu);
+    run_menu(menu, event);
+  }
+    
 }
-
-*/
