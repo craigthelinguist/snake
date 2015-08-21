@@ -5,12 +5,12 @@
 #include <string.h>
 
 #define KEY_ESC 27
-#define KEY_ENTER 10
+#define KEY_NL 10
 
 #define COLOR_NORMAL COLOR_PAIR(10)
 #define COLOR_HIGHLIGHT COLOR_PAIR(11)
 
-enum item_type { SLIDER, TEXT };
+enum item_type { SLIDER, TEXT, MOVE };
 
 struct item_slider {
   char *text;
@@ -142,7 +142,7 @@ make_menu (struct menu *menu, WINDOW *window, struct menu_item **items, int num_
 {
   
   // Make the menu struct.
-  menu->indent_size = 3;
+  menu->indent_size = 5;
   menu->window = window;
   
   menu->items = items;
@@ -165,7 +165,7 @@ menu_refresh (struct menu *menu)
   wclear(menu->window);
   
   // Offsets for displaying.
-  int top_offset = 2;
+  int top_offset = 1;
   int left_offset = menu->indent_size;
   
   // Variables for use inside switch statement.
@@ -180,13 +180,18 @@ menu_refresh (struct menu *menu)
   // Go through each menu element, output to window.
   int i;
   
-  // Display highlighted index.
-  mvwprintw(window, 0, 0, "Highlighted: %d\n", menu->selection);
+  // Set color.
+  attron(COLOR_NORMAL);
   
   // Draw each item on the screen.
   for (i=0; i != sz; i++) {
     struct menu_item *elem = elems[i];
     top_offset++;
+    
+    if (i == menu->selection) {
+      wattron(window, COLOR_HIGHLIGHT);
+      mvwprintw(window, top_offset, left_offset-3, "->");
+    }
     
     switch (elem->tag) {
       
@@ -211,9 +216,14 @@ menu_refresh (struct menu *menu)
           break;
           
     }
-    
+   
+   if (i == menu->selection) {
+     wattron(window, COLOR_NORMAL);
+   }
+     
   }
   
+  wattroff(window, COLOR_NORMAL);
   // Refresh window.
   wrefresh(window);
   
@@ -280,9 +290,6 @@ void
 run_menu (struct menu *menu, struct menu_event *menu_event)
 {
   
-  // Index of current selection.
-  int i = 0;
-  
   // Window we're outputting to.
   WINDOW *window = menu->window;
   
@@ -295,75 +302,27 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   struct item_text *item_text;
   struct item_slider *item_slider;
   
-  int c;
+  
+  int ch;
   while (1) {
-    c = wgetch(window);
-    elem = menu->items[i];
-    enum item_type type = elem->tag;
+    ch = getch();
     
     // Press "esc".
-    if (c == KEY_ESC) {
+    if (ch == KEY_ESC) {
       menu_event = _EXIT_EVENT(NULL);
       break;
     }
-    
-    // Press "enter" on a text item.
-    else if (c == KEY_ENTER && type == TEXT) {
-      item_text = elem->item.text;
-      if (item_text->exit) menu_event = _EXIT_EVENT(elem);
-      else menu_event = _TEXT_EVENT(elem);
-      break;
-    }
-    
-    // Press "enter" on a slider item.
-    else if (c == KEY_ENTER && type == SLIDER) {
-      item_slider = elem->item.slider;
-      if (!engaged) {
-        engaged = 1;
-	// TODO: engagement needs to be stored somewhere.
-	break;
-      }
-      else {
-        engaged = 0;
-        menu_event = _SLIDER_EVENT(elem);
-        break;
-      }
-    }
-    
-    // Press "left" on an engaged slider.
-    else if (c == KEY_LEFT && type == SLIDER && engaged) {
-      item_slider = elem->item.slider;
-      int new_pos = item_slider->pos;
-      if (new_pos > 0) {
-        new_pos--;
-        item_slider->pos = new_pos;
-      }
-      break;
-    }
-    
-    // Press "right" on an engaged slider.
-    else if (c == KEY_RIGHT && type == SLIDER && engaged) {
-      fprintf(stderr, "right");
-      item_slider = elem->item.slider;
-      int new_pos = item_slider->pos;
-      if (new_pos < item_slider->length) {
-        new_pos++;
-        item_slider->pos = new_pos;
-      }
-      break;
-    }
-    
     // Press "down".
-    else if (c == KEY_DOWN && !engaged) {
+    else if (ch == KEY_DOWN && !engaged) {
       fprintf(stderr, "down");
-      if (i < menu->num_items-1) menu->selection = i+1;
+      if (menu->selection < menu->num_items - 1) menu->selection = menu->selection+1;
       break;
     }
     
     // Press "up".
-    else if (c == KEY_UP && !engaged) {
+    else if (ch == KEY_UP && !engaged) {
       fprintf(stderr, "up");
-      if (i > 0) menu->selection = i-1;
+      if (menu->selection > 0) menu->selection = menu->selection-1;
       break;
     }
     
@@ -383,13 +342,19 @@ main (int argc, char *argv[])
   
   // allow for function keys to be registered by ncurses.
   keypad(stdscr, TRUE);
-
+  
+  if (has_colors() == FALSE) {
+    fprintf(stderr, "no colour");
+    exit(1);
+    
+  }
+  
   // Enable colours.
   start_color();
   
   // Create colour pairs.
-  init_pair(10, COLOR_RED, COLOR_BLUE);
-  init_pair(11, COLOR_GREEN, COLOR_YELLOW);
+  init_pair(10, COLOR_WHITE, COLOR_BLACK);
+  init_pair(11, COLOR_BLACK, COLOR_WHITE);
   
   // Make items.
   struct menu_item *item1 = malloc(sizeof (struct menu_item));
@@ -409,10 +374,9 @@ main (int argc, char *argv[])
   
   // Run the menu.
   struct menu_event *event = malloc(sizeof (struct menu_event));
-  while(1) {
-    //menu_refresh(menu);
-    run_menu(menu, event);    
-    
-  }
+  do {
+    menu_refresh(menu);
+    run_menu(menu, event);
+  } while (1);
     
 }
