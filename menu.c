@@ -7,6 +7,9 @@
 #define KEY_ESC 27
 #define KEY_ENTER 10
 
+#define COLOR_NORMAL COLOR_PAIR(10)
+#define COLOR_HIGHLIGHT COLOR_PAIR(11)
+
 enum item_type { SLIDER, TEXT };
 
 struct item_slider {
@@ -176,13 +179,17 @@ menu_refresh (struct menu *menu)
   
   // Go through each menu element, output to window.
   int i;
+  
+  // Display highlighted index.
+  mvwprintw(window, 0, 0, "Highlighted: %d\n", menu->selection);
+  
+  // Draw each item on the screen.
   for (i=0; i != sz; i++) {
-    
     struct menu_item *elem = elems[i];
     top_offset++;
     
     switch (elem->tag) {
-
+      
         case TEXT:
           item_text = elem->item.text;
           mvwprintw(window, top_offset, left_offset, item_text->text);
@@ -204,12 +211,11 @@ menu_refresh (struct menu *menu)
           break;
           
     }
+    
   }
   
   // Refresh window.
   wrefresh(window);
-  
-  while (1);
   
 }
 
@@ -277,6 +283,9 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   // Index of current selection.
   int i = 0;
   
+  // Window we're outputting to.
+  WINDOW *window = menu->window;
+  
   // Whether you're engaged on the currently selected menu element.
   // This only makes sense for some types, e.g.: sliders.
   int engaged = 0;
@@ -288,7 +297,7 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   
   int c;
   while (1) {
-    c = getch();
+    c = wgetch(window);
     elem = menu->items[i];
     enum item_type type = elem->tag;
     
@@ -311,6 +320,8 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
       item_slider = elem->item.slider;
       if (!engaged) {
         engaged = 1;
+	// TODO: engagement needs to be stored somewhere.
+	break;
       }
       else {
         engaged = 0;
@@ -327,31 +338,36 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
         new_pos--;
         item_slider->pos = new_pos;
       }
+      break;
     }
     
     // Press "right" on an engaged slider.
     else if (c == KEY_RIGHT && type == SLIDER && engaged) {
+      fprintf(stderr, "right");
       item_slider = elem->item.slider;
       int new_pos = item_slider->pos;
       if (new_pos < item_slider->length) {
         new_pos++;
         item_slider->pos = new_pos;
       }
+      break;
     }
     
     // Press "down".
     else if (c == KEY_DOWN && !engaged) {
-      if (i < menu->num_items) i++;
+      fprintf(stderr, "down");
+      if (i < menu->num_items-1) menu->selection = i+1;
+      break;
     }
     
     // Press "up".
     else if (c == KEY_UP && !engaged) {
-      if (i > 0) i--;
+      fprintf(stderr, "up");
+      if (i > 0) menu->selection = i-1;
+      break;
     }
     
   }
-  
-  menu->selection = i;
   
 }
 
@@ -363,16 +379,17 @@ main (int argc, char *argv[])
   // establish terminal, remove cursor.
   initscr();
   noecho();
+  curs_set(FALSE);
   
   // allow for function keys to be registered by ncurses.
   keypad(stdscr, TRUE);
 
-  // set input delay so it is non-blocking.
-  timeout(0);
-
+  // Enable colours.
+  start_color();
   
-  nodelay(stdscr, 0);
-  curs_set(FALSE);
+  // Create colour pairs.
+  init_pair(10, COLOR_RED, COLOR_BLUE);
+  init_pair(11, COLOR_GREEN, COLOR_YELLOW);
   
   // Make items.
   struct menu_item *item1 = malloc(sizeof (struct menu_item));
@@ -393,8 +410,9 @@ main (int argc, char *argv[])
   // Run the menu.
   struct menu_event *event = malloc(sizeof (struct menu_event));
   while(1) {
-    menu_refresh(menu);
-    run_menu(menu, event);
+    //menu_refresh(menu);
+    run_menu(menu, event);    
+    
   }
     
 }
