@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "menu.h"
+
 #define KEY_ESC 27
 #define KEY_NL 10
 
@@ -71,7 +73,7 @@ make_item_text (struct menu_item *elem, char *text)
   elem->tag = TEXT;
   elem->item.text = item_text;
   
-};
+}
 
   /*
     Make an exit item. This is the same as a text item, but when it is
@@ -223,64 +225,63 @@ menu_refresh (struct menu *menu)
       
         case TEXT:
 	  
-	  if (i == menu->selection) {
-	    wattron(window, COLOR_HIGHLIGHT);
-	    mvwprintw(window, top_offset, left_offset-3, "-->");
-	    left_offset = left_offset + 1;
-	  }
+	        if (i == menu->selection) {
+	          wattron(window, COLOR_HIGHLIGHT);
+	          mvwprintw(window, top_offset, left_offset-3, "-->");
+	          left_offset = left_offset + 1;
+	        }
 
-	  item_text = elem->item.text;
+	        item_text = elem->item.text;
           mvwprintw(window, top_offset, left_offset, item_text->text);
           
-	  if (i == menu->selection) {
-	    wattron(window, COLOR_NORMAL);
-	    left_offset = left_offset - 1;
-	  }
+	        if (i == menu->selection) {
+	          wattron(window, COLOR_NORMAL);
+	          left_offset = left_offset - 1;
+	          }
      
-	  break;
+	        break;
           
         case SLIDER:
           item_slider = elem->item.slider;
 	  
-	  if (i == menu->selection && !engaged) {
-	    wattron(window, COLOR_HIGHLIGHT);
-	    mvwprintw(window, top_offset, left_offset-3, "-->");
-	    left_offset = left_offset + 1;
-	  }
+	        if (i == menu->selection && !engaged) {
+	          wattron(window, COLOR_HIGHLIGHT);
+	          mvwprintw(window, top_offset, left_offset-3, "-->");
+	          left_offset = left_offset + 1;
+	        }
 
           // Draw slider text.
           mvwprintw(window, top_offset, left_offset, item_slider->text);
           top_offset++;
          
-	  if (i == menu->selection && !engaged) {
-	    wattron(window, COLOR_NORMAL);
-	    left_offset = left_offset - 1;
-	  }
+	        if (i == menu->selection && !engaged) {
+	          wattron(window, COLOR_NORMAL);
+	          left_offset = left_offset - 1;
+	        }
           
           // Draw slider.
           
           int slider_left_offset = left_offset + (int)(0.5*left_offset);
           
-	  if (i == menu->selection && engaged) {
-	    wattron(window, COLOR_HIGHLIGHT);
-	    mvwprintw(window, top_offset, slider_left_offset-4, "-->");
-	    wattron(window, COLOR_NORMAL);
-	  }
+	        if (i == menu->selection && engaged) {
+	          wattron(window, COLOR_HIGHLIGHT);
+	          mvwprintw(window, top_offset, slider_left_offset-4, "-->");
+	          wattron(window, COLOR_NORMAL);
+	        }
 	  
           mvwaddch(window, top_offset, slider_left_offset, '[');
           int j;
 	  
-	  wattron(window, COLOR_SLIDER);
+	        wattron(window, COLOR_SLIDER);
           
-	  for (j=0; j < item_slider->pos; j++) {
+	        for (j=0; j < item_slider->pos; j++) {
             mvwaddch(window, top_offset, slider_left_offset+1+j, '=');
           }
           
           wattron(window, COLOR_NORMAL);
           mvwaddch(window, top_offset, slider_left_offset+item_slider->length, ']');
          
-	  
-	  break;
+	        break;
           
     }
    
@@ -367,7 +368,7 @@ _ENGAGE_EVENT (struct menu_event *menu_event, struct menu_item *elem)
       created when this function returns.
   */
 void
-run_menu (struct menu *menu, struct menu_event *event)
+menu_run (struct menu *menu, struct menu_event *event)
 {
   
   // Window we're outputting to.
@@ -459,64 +460,3 @@ init_menu_colours ()
   
 }
 
-int
-main (int argc, char *argv[])
-{
-	
-  // establish terminal, remove cursor.
-  initscr();
-  noecho();
-  curs_set(FALSE);
-  
-  // allow for function keys to be registered by ncurses.
-  keypad(stdscr, TRUE);
-  
-  if (has_colors() == FALSE) {
-    fprintf(stderr, "no colour");
-    exit(1);
-    
-  }
-  
-  // Enable colours.
-  start_color();
-  init_menu_colours();
-  
-  // Make items.
-  struct menu_item *item1 = malloc(sizeof (struct menu_item));
-  make_item_text(item1, "Play");
-  struct menu_item *item2 = malloc(sizeof (struct menu_item));
-  make_item_slider(item2, "Difficulty", 10);
-  struct menu_item *item3 = malloc(sizeof (struct menu_item));
-  make_item_exit(item3, "Exit");
-  
-  struct menu_item *items[] = { item1, item2, item3 };
-  
-  // Make the window.
-  WINDOW *window;
-  window = newwin(30, 30, 0, 0);
-  
-  // Make menu.
-  struct menu *menu = malloc(sizeof (struct menu));
-  int num_items = sizeof(items) / sizeof(items[0]);
-  make_menu(menu, window, items, num_items);
-  
-  // Run the menu.
-  struct menu_event *event;
-  int done = 0;
-  do {
-    event = malloc(sizeof (struct menu_event));
-    menu_refresh(menu);
-    run_menu(menu, event);
-    if (event->tag == EXIT) done = 1;
-    free(event);
-  } while (!done);
-  
-  // Dismantle ncurses.
-  wclear(window);
-  endwin();
-  
-  // Free memory.
-  free_menu(menu);
-  return 0;
-    
-}

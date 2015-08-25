@@ -10,7 +10,7 @@
 #include <string.h>
 #include <sys/time.h>
 
-
+#include "menu.h"
 
 // ------------------------------------------------------------
 // Macros.
