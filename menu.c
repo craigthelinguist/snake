@@ -37,9 +37,10 @@ struct menu {
   struct menu_item **items;
   int num_items;
   int selection;
+  int engaged;
 };
 
-enum event_type { EXIT, SLIDER_RETURN, TEXT_RETURN };
+enum event_type { EXIT, SLIDER_RETURN, TEXT_RETURN, NAVIGATE };
 
 struct menu_event {
   enum event_type tag;
@@ -148,6 +149,7 @@ make_menu (struct menu *menu, WINDOW *window, struct menu_item **items, int num_
   menu->items = items;
   menu->num_items = num_items;
   menu->selection = 0;
+  menu->engaged = 0;
   
 }
 
@@ -188,24 +190,44 @@ menu_refresh (struct menu *menu)
     struct menu_item *elem = elems[i];
     top_offset++;
     
-    if (i == menu->selection) {
-      wattron(window, COLOR_HIGHLIGHT);
-      mvwprintw(window, top_offset, left_offset-3, "->");
-    }
-    
     switch (elem->tag) {
       
         case TEXT:
-          item_text = elem->item.text;
+    
+	  if (i == menu->selection) {
+	    wattron(window, COLOR_HIGHLIGHT);
+	    mvwprintw(window, top_offset, left_offset-3, "-->");
+	    left_offset = left_offset + 1;
+	  }
+
+	  item_text = elem->item.text;
           mvwprintw(window, top_offset, left_offset, item_text->text);
-          break;
+          
+	  
+	  if (i == menu->selection) {
+	    wattron(window, COLOR_NORMAL);
+	    left_offset = left_offset - 1;
+	  }
+     
+	  break;
           
         case SLIDER:
           item_slider = elem->item.slider;
-          
+	  
+	  if (i == menu->selection) {
+	    wattron(window, COLOR_HIGHLIGHT);
+	    mvwprintw(window, top_offset, left_offset-3, "-->");
+	    left_offset = left_offset + 1;
+	  }
+
           // Draw slider text.
           mvwprintw(window, top_offset, left_offset, item_slider->text);
           top_offset++;
+         
+	  if (i == menu->selection) {
+	    wattron(window, COLOR_NORMAL);
+	    left_offset = left_offset - 1;
+	  }
           
           // Draw slider.
           mvwaddch(window, top_offset, left_offset + (int)(0.5*left_offset), '[');
@@ -213,14 +235,11 @@ menu_refresh (struct menu *menu)
           for (j=0; j < item_slider->length; j++) {
             mvwaddch(window, top_offset, left_offset + (int)(0.5*left_offset)+1+j, '-');
           }
+          mvwaddch(window, top_offset, left_offset + (0.5*left_offset)+1+item_slider->length, ']');
           break;
           
     }
    
-   if (i == menu->selection) {
-     wattron(window, COLOR_NORMAL);
-   }
-     
   }
   
   wattroff(window, COLOR_NORMAL);
@@ -232,14 +251,12 @@ menu_refresh (struct menu *menu)
   /*
     Convenience function. Makes an exit event.
   */
-struct menu_event *
-_EXIT_EVENT (struct menu_item *elem)
+void
+_EXIT_EVENT (struct menu_event *menu_event, struct menu_item *elem)
 {
-  struct menu_event *menu_event = malloc (sizeof (struct menu_event));
   menu_event->tag = EXIT;
   menu_event->elem = elem;
   menu_event->int_value = 0;
-  return menu_event;
 }
 
   /*
@@ -248,15 +265,12 @@ _EXIT_EVENT (struct menu_item *elem)
     str:
       Text to be contained in the event.
   */
-struct menu_event *
-_TEXT_EVENT (struct menu_item *elem)
+void
+_TEXT_EVENT (struct menu_event *menu_event, struct menu_item *elem)
 {
-  
-  struct menu_event *menu_event = malloc (sizeof (struct menu_event));
   menu_event->tag = TEXT_RETURN;
   menu_event->elem = elem;
   menu_event->int_value = 0;
-  return menu_event;
 }
 
   /*
@@ -265,14 +279,19 @@ _TEXT_EVENT (struct menu_item *elem)
     amt:
       int to be contained in the event.
   */
-struct menu_event *
-_SLIDER_EVENT (struct menu_item *elem)
+void
+_SLIDER_EVENT (struct menu_event *menu_event, struct menu_item *elem)
 {
-  struct menu_event *menu_event = malloc (sizeof (struct menu_event));
   menu_event->tag = SLIDER_RETURN;
   menu_event->elem = elem;
   menu_event->int_value = elem->item.slider->pos;
-  return menu_event;
+}
+
+void
+_NAVIGATE_EVENT (struct menu_event *menu_event, struct menu_item *elem)
+{
+  menu_event->tag = NAVIGATE;
+  menu_event->elem = elem;
 }
 
   /*
@@ -287,7 +306,7 @@ _SLIDER_EVENT (struct menu_item *elem)
       created when this function returns.
   */
 void
-run_menu (struct menu *menu, struct menu_event *menu_event)
+run_menu (struct menu *menu, struct menu_event *event)
 {
   
   // Window we're outputting to.
@@ -295,34 +314,54 @@ run_menu (struct menu *menu, struct menu_event *menu_event)
   
   // Whether you're engaged on the currently selected menu element.
   // This only makes sense for some types, e.g.: sliders.
-  int engaged = 0;
+  int engaged = menu->engaged;
   
   // For use below.
-  struct menu_item *elem;
+  struct menu_item *elem = menu->items[menu->selection];
   struct item_text *item_text;
   struct item_slider *item_slider;
   
-  
   int ch;
   while (1) {
+    
     ch = getch();
     
     // Press "esc".
     if (ch == KEY_ESC) {
-      menu_event = _EXIT_EVENT(NULL);
+      _EXIT_EVENT(event, NULL);
       break;
     }
+    
+    // Press "enter" while disengaged with slider.
+    //else if (ch == KEY_ENTER && !engaged && elem->tag == SLIDER) {
+    //}
+    
+    // Press "left" while engaged with slider.
+    
+    // Press "right" while engaged with slider.
+    
+    // Press "enter" while engaged with slider.
+    
+    // Press "enter"; send key event
+    else if (ch == KEY_NL) {
+      item_text = (elem->item).text;     
+      if (item_text->exit) _EXIT_EVENT(event, elem);
+      else _TEXT_EVENT(event, elem);
+      break;
+    }
+    
     // Press "down".
     else if (ch == KEY_DOWN && !engaged) {
       fprintf(stderr, "down");
       if (menu->selection < menu->num_items - 1) menu->selection = menu->selection+1;
+      _NAVIGATE_EVENT(event, elem);
       break;
     }
     
     // Press "up".
     else if (ch == KEY_UP && !engaged) {
-      fprintf(stderr, "up");
       if (menu->selection > 0) menu->selection = menu->selection-1;
+      _NAVIGATE_EVENT(event, elem);
       break;
     }
     
@@ -360,8 +399,11 @@ main (int argc, char *argv[])
   struct menu_item *item1 = malloc(sizeof (struct menu_item));
   make_item_text(item1, "Item 1");
   struct menu_item *item2 = malloc(sizeof (struct menu_item));
-  make_item_exit(item2, "Exit");
-  struct menu_item *items[] = { item1, item2 };
+  make_item_slider(item2, "Difficulty", 10);
+  struct menu_item *item3 = malloc(sizeof (struct menu_item));
+  make_item_exit(item3, "Exit");
+  
+  struct menu_item *items[] = { item1, item2, item3 };
   
   // Make the window.
   WINDOW *window;
@@ -373,10 +415,19 @@ main (int argc, char *argv[])
   make_menu(menu, window, items, num_items);
   
   // Run the menu.
-  struct menu_event *event = malloc(sizeof (struct menu_event));
+  struct menu_event *event;
+  int done = 0;
   do {
+    event = malloc(sizeof (struct menu_event));
     menu_refresh(menu);
     run_menu(menu, event);
-  } while (1);
+    if (event->tag == EXIT) done = 1;
+    free(event);
+  } while (!done);
+  
+  // Clean up; should do a whole bunch of frees here too.
+  wclear(window);
+  endwin();
+  return 0;
     
 }
