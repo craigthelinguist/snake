@@ -9,8 +9,9 @@
 
 #define COLOR_NORMAL COLOR_PAIR(10)
 #define COLOR_HIGHLIGHT COLOR_PAIR(11)
+#define COLOR_SLIDER COLOR_PAIR(12)
 
-enum item_type { SLIDER, TEXT, MOVE };
+enum item_type { SLIDER, TEXT };
 
 struct item_slider {
   char *text;
@@ -40,7 +41,7 @@ struct menu {
   int engaged;
 };
 
-enum event_type { EXIT, SLIDER_RETURN, TEXT_RETURN, NAVIGATE };
+enum event_type { EXIT, SLIDER_DISENGAGE, SLIDER_ENGAGE, SLIDER_MOVE, TEXT_RETURN, NAVIGATE };
 
 struct menu_event {
   enum event_type tag;
@@ -153,6 +154,31 @@ make_menu (struct menu *menu, WINDOW *window, struct menu_item **items, int num_
   
 }
 
+void
+free_elem (struct menu_item *elem)
+{
+  switch (elem -> tag) {
+    case SLIDER:
+      free((elem->item).slider);
+      break;
+    case TEXT:
+      free((elem->item).text);
+      break; 
+  }
+  free(elem);
+}
+  
+void
+free_menu (struct menu *menu)
+{
+  int i = 0;
+  for (; i < menu->num_items; i++) {
+    free_elem(menu->items[i]);
+  }
+  free(menu);
+}
+
+
   /*
     Refresh the menu by drawing its contents onto its window.
 
@@ -182,6 +208,9 @@ menu_refresh (struct menu *menu)
   // Go through each menu element, output to window.
   int i;
   
+  // Whether the menu is engaged on an element.
+  int engaged = menu->engaged;
+  
   // Set color.
   attron(COLOR_NORMAL);
   
@@ -193,7 +222,7 @@ menu_refresh (struct menu *menu)
     switch (elem->tag) {
       
         case TEXT:
-    
+	  
 	  if (i == menu->selection) {
 	    wattron(window, COLOR_HIGHLIGHT);
 	    mvwprintw(window, top_offset, left_offset-3, "-->");
@@ -203,7 +232,6 @@ menu_refresh (struct menu *menu)
 	  item_text = elem->item.text;
           mvwprintw(window, top_offset, left_offset, item_text->text);
           
-	  
 	  if (i == menu->selection) {
 	    wattron(window, COLOR_NORMAL);
 	    left_offset = left_offset - 1;
@@ -214,7 +242,7 @@ menu_refresh (struct menu *menu)
         case SLIDER:
           item_slider = elem->item.slider;
 	  
-	  if (i == menu->selection) {
+	  if (i == menu->selection && !engaged) {
 	    wattron(window, COLOR_HIGHLIGHT);
 	    mvwprintw(window, top_offset, left_offset-3, "-->");
 	    left_offset = left_offset + 1;
@@ -224,19 +252,35 @@ menu_refresh (struct menu *menu)
           mvwprintw(window, top_offset, left_offset, item_slider->text);
           top_offset++;
          
-	  if (i == menu->selection) {
+	  if (i == menu->selection && !engaged) {
 	    wattron(window, COLOR_NORMAL);
 	    left_offset = left_offset - 1;
 	  }
           
           // Draw slider.
-          mvwaddch(window, top_offset, left_offset + (int)(0.5*left_offset), '[');
+          
+          int slider_left_offset = left_offset + (int)(0.5*left_offset);
+          
+	  if (i == menu->selection && engaged) {
+	    wattron(window, COLOR_HIGHLIGHT);
+	    mvwprintw(window, top_offset, slider_left_offset-4, "-->");
+	    wattron(window, COLOR_NORMAL);
+	  }
+	  
+          mvwaddch(window, top_offset, slider_left_offset, '[');
           int j;
-          for (j=0; j < item_slider->length; j++) {
-            mvwaddch(window, top_offset, left_offset + (int)(0.5*left_offset)+1+j, '-');
+	  
+	  wattron(window, COLOR_SLIDER);
+          
+	  for (j=0; j < item_slider->pos; j++) {
+            mvwaddch(window, top_offset, slider_left_offset+1+j, '=');
           }
-          mvwaddch(window, top_offset, left_offset + (0.5*left_offset)+1+item_slider->length, ']');
-          break;
+          
+          wattron(window, COLOR_NORMAL);
+          mvwaddch(window, top_offset, slider_left_offset+item_slider->length, ']');
+         
+	  
+	  break;
           
     }
    
@@ -246,6 +290,14 @@ menu_refresh (struct menu *menu)
   // Refresh window.
   wrefresh(window);
   
+}
+
+void
+_SLIDE_EVENT (struct menu_event *menu_event, struct menu_item *elem, int newpos)
+{
+  menu_event->tag = SLIDER_MOVE;
+  menu_event->elem = elem;
+  menu_event->int_value = newpos;
 }
 
   /*
@@ -280,11 +332,11 @@ _TEXT_EVENT (struct menu_event *menu_event, struct menu_item *elem)
       int to be contained in the event.
   */
 void
-_SLIDER_EVENT (struct menu_event *menu_event, struct menu_item *elem)
+_DISENGAGE_EVENT (struct menu_event *menu_event, struct menu_item *elem)
 {
-  menu_event->tag = SLIDER_RETURN;
+  menu_event->tag = SLIDER_DISENGAGE;
   menu_event->elem = elem;
-  menu_event->int_value = elem->item.slider->pos;
+  menu_event->int_value = 0;
 }
 
 void
@@ -292,6 +344,15 @@ _NAVIGATE_EVENT (struct menu_event *menu_event, struct menu_item *elem)
 {
   menu_event->tag = NAVIGATE;
   menu_event->elem = elem;
+  menu_event->int_value = 0;
+}
+
+void
+_ENGAGE_EVENT (struct menu_event *menu_event, struct menu_item *elem)
+{
+  menu_event->tag = SLIDER_ENGAGE;
+  menu_event->elem = elem;
+  menu_event->int_value = 0;
 }
 
   /*
@@ -329,25 +390,39 @@ run_menu (struct menu *menu, struct menu_event *event)
     // Press "esc".
     if (ch == KEY_ESC) {
       _EXIT_EVENT(event, NULL);
-      break;
+      return;
     }
     
     // Press "enter" while disengaged with slider.
-    //else if (ch == KEY_ENTER && !engaged && elem->tag == SLIDER) {
-    //}
-    
-    // Press "left" while engaged with slider.
-    
-    // Press "right" while engaged with slider.
+    else if (ch == KEY_NL && !engaged && elem->tag == SLIDER) {
+      menu->engaged = 1;
+      _ENGAGE_EVENT(event, elem);
+      return;
+    }
     
     // Press "enter" while engaged with slider.
+    else if (ch == KEY_NL && engaged && elem->tag == SLIDER) {
+      menu->engaged = 0;
+      _DISENGAGE_EVENT(event, elem);
+      return;
+    }
+    
+    // Press "left" or "right" while engaged with slider.
+    else if (engaged && elem->tag == SLIDER && (ch == KEY_LEFT || ch == KEY_RIGHT)) {
+      item_slider = (elem->item).slider;
+      int dir = ch == KEY_LEFT ? -1 : 1;
+      int newpos = item_slider->pos + dir;      
+      if (newpos >= 0 && newpos < item_slider->length) item_slider->pos = newpos;
+      _SLIDE_EVENT(event, elem, newpos); 
+      return;
+    }
     
     // Press "enter"; send key event
     else if (ch == KEY_NL) {
       item_text = (elem->item).text;     
       if (item_text->exit) _EXIT_EVENT(event, elem);
       else _TEXT_EVENT(event, elem);
-      break;
+      return;
     }
     
     // Press "down".
@@ -355,20 +430,34 @@ run_menu (struct menu *menu, struct menu_event *event)
       fprintf(stderr, "down");
       if (menu->selection < menu->num_items - 1) menu->selection = menu->selection+1;
       _NAVIGATE_EVENT(event, elem);
-      break;
+      return;
     }
     
     // Press "up".
     else if (ch == KEY_UP && !engaged) {
       if (menu->selection > 0) menu->selection = menu->selection-1;
       _NAVIGATE_EVENT(event, elem);
-      break;
+      return;
     }
     
   }
   
 }
 
+void
+init_menu_colours ()
+{
+  
+  // Colour for non-highlighted items.
+  init_pair(10, COLOR_WHITE, COLOR_BLACK);
+  
+  // Colour for highlighted items.
+  init_pair(11, COLOR_BLACK, COLOR_WHITE);
+
+  // Colour for slider bars.
+  init_pair(12, COLOR_GREEN, COLOR_BLACK);
+  
+}
 
 int
 main (int argc, char *argv[])
@@ -390,14 +479,11 @@ main (int argc, char *argv[])
   
   // Enable colours.
   start_color();
-  
-  // Create colour pairs.
-  init_pair(10, COLOR_WHITE, COLOR_BLACK);
-  init_pair(11, COLOR_BLACK, COLOR_WHITE);
+  init_menu_colours();
   
   // Make items.
   struct menu_item *item1 = malloc(sizeof (struct menu_item));
-  make_item_text(item1, "Item 1");
+  make_item_text(item1, "Play");
   struct menu_item *item2 = malloc(sizeof (struct menu_item));
   make_item_slider(item2, "Difficulty", 10);
   struct menu_item *item3 = malloc(sizeof (struct menu_item));
@@ -425,9 +511,12 @@ main (int argc, char *argv[])
     free(event);
   } while (!done);
   
-  // Clean up; should do a whole bunch of frees here too.
+  // Dismantle ncurses.
   wclear(window);
   endwin();
+  
+  // Free memory.
+  free_menu(menu);
   return 0;
     
 }
