@@ -342,35 +342,9 @@ int opposites (Direction d1, Direction d2)
 // Main.
 // ------------------------------------------------------------
 
-void
-parse_args (int argc, char *argv[], struct game_data *game)
+
+void play_game (struct game_data *game)
 {
-  // default difficulty
-  if (argc == 1) {
-    game->difficulty = 1;
-    return;  
-  }
-
-  // parse difficulty
-  if (argc == 2) {
-    game->difficulty = atoi(argv[1]);
-    return;
-  }
-
-  // error.
-  printf("Bad number of arguments.\n");
-  abort();
-}
-
-int main (int argc, char *argv[])
-{
-
-  // set up game and gui.
-  struct game_data *game = malloc (sizeof (struct game_data));
-  game->WALL_WD = 20;
-  game->WALL_HT = 20;
-  parse_args(argc, argv, game);
-  setup_gui(game);
 
   // initialise snake.
   struct snake *snake = init_snake(NULL, game->WALL_HT/2, game->WALL_WD/2);
@@ -423,5 +397,79 @@ int main (int argc, char *argv[])
 
   }
   endwin();
-  return 0;
 }
+
+int
+main (int argc, char *argv[])
+{
+  
+  // Establish ncurses.
+  initscr();
+  noecho();
+  curs_set(FALSE);
+  keypad(stdscr, TRUE);
+
+  // Enable colours.
+  if (has_colors() == FALSE) {
+    fprintf(stderr, "No colour - exiting.");  
+    exit(1);  
+  }
+  start_color();
+  menu_init_colours();
+
+  // Create main menu.
+  WINDOW *window = newwin(30, 30, 0, 0);
+
+  // Allocate memory for menu items.
+  ITEM *item1 = malloc(sizeof (ITEM));
+  ITEM *item2 = malloc(sizeof (ITEM));
+  ITEM *item3 = malloc(sizeof (ITEM));
+
+  // Create menu items.
+  make_item_text(item1, "Play");
+  make_item_slider(item2, "Difficulty", 10);
+  make_item_exit(item3, "Exit");
+
+  // Allocate memory for menu; create menu.
+  ITEM *items[] = { item1, item2, item3 };
+  MENU *menu = malloc(sizeof (MENU));
+  int num_items = sizeof(items) / sizeof(items[0]);
+  make_menu(menu, window, items, num_items);
+
+  // Create game data.
+  struct game_data *game = malloc(sizeof (struct game_data));
+  game->WALL_WD = 20;
+  game->WALL_HT = 20;
+  game->difficulty = 0;
+
+  // Display menu, get options.
+  while (1) {
+    EVENT *event;
+    int done = 0;
+    while (!done) {
+      event = malloc(sizeof (EVENT));
+      menu_refresh(menu);
+      menu_run(menu, event);
+      EVENT_TYPE type = get_event_type(event);
+      if (type == EXIT) done = 1;
+      else if (type == TEXT_RETURN) done = 2;
+      free(event);
+    }
+
+    // User wants to play a game.
+    if (done == 2) {
+      play_game(game);
+    }
+
+    // User exited. Tidy up and return.
+    if (done == 1) {
+      wclear(window);
+      endwin();
+      free(game);   
+      free_menu(menu);
+      return 0;
+    }
+  }
+
+}
+

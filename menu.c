@@ -13,44 +13,6 @@
 #define COLOR_HIGHLIGHT COLOR_PAIR(11)
 #define COLOR_SLIDER COLOR_PAIR(12)
 
-enum item_type { SLIDER, TEXT };
-
-struct item_slider {
-  char *text;
-  int length;
-  int pos;
-};
-
-struct item_text {
-  char *text;
-  int exit;
-};
-
-struct menu_item {
-  enum item_type tag;
-  union {
-    struct item_text *text;
-    struct item_slider *slider;
-  } item;
-};
-
-struct menu {
-  int indent_size;
-  WINDOW *window;
-  struct menu_item **items;
-  int num_items;
-  int selection;
-  int engaged;
-};
-
-enum event_type { EXIT, SLIDER_DISENGAGE, SLIDER_ENGAGE, SLIDER_MOVE, TEXT_RETURN, NAVIGATE };
-
-struct menu_event {
-  enum event_type tag;
-  struct menu_item *elem;
-  int int_value;
-};
-
   /*
     Make a text item.
     elem:
@@ -180,6 +142,27 @@ free_menu (struct menu *menu)
   free(menu);
 }
 
+  /*
+    Get the EVENT_TYPE for an EVENT which fired.
+    event:
+      Event which fired.
+ */
+enum event_type
+get_event_type (struct menu_event *event)
+{
+  return event->tag;
+}
+
+  /*
+    Get the ITEM which caused an EVENT to fire.
+    event:
+      Event which fired.
+  */
+struct menu_item *
+get_event_item (struct menu_event *event)
+{
+  return event->elem;
+}
 
   /*
     Refresh the menu by drawing its contents onto its window.
@@ -446,7 +429,7 @@ menu_run (struct menu *menu, struct menu_event *event)
 }
 
 void
-init_menu_colours ()
+menu_init_colours ()
 {
   
   // Colour for non-highlighted items.
