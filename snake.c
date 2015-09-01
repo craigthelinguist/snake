@@ -60,9 +60,10 @@ struct game_data {
 // ------------------------------------------------------------
 
 // Drawing functions.
-void draw_snake (struct snake *snake);
-void draw_wall (struct game_data *game);
-void draw_food (struct point p);
+void draw_snake (struct snake *, WINDOW *);
+void draw_wall (struct game_data *, WINDOW *);
+void draw_food (struct point, WINDOW *);
+void draw_direction (Direction, WINDOW *);
 
 // Snake-related functions.
 struct snake *init_snake (struct snake *prev, int row, int col);
@@ -80,8 +81,8 @@ long int update_delay(struct game_data *);
 // Input-related functions.
 int process_input(Direction snake_dir, Direction *queued_dir);
 
-// Gui-related functions.
-void setup_gui(struct game_data *);
+// Game-related functions.
+void play_game (struct game_data *, WINDOW *);
 
 
 
@@ -112,80 +113,47 @@ long int update_delay (struct game_data *game) {
 // Drawing functions.
 // ------------------------------------------------------------
 
-/*  Set up and configure the gui. */
-void
-setup_gui (struct game_data *game)
-{
-
-  // establish terminal, remove cursor.
-  initscr();
-  noecho();
-  curs_set(FALSE);
-
-  // set up colours used in programme.
-  start_color();
-  init_pair(1, COLOR_WHITE, COLOR_WHITE); // snake colour
-  init_pair(2, COLOR_CYAN, COLOR_CYAN); // wall colour
-  init_pair(3, COLOR_RED, COLOR_RED); // food colour
-
-  // store dimensions of the screen.
-  int rows, cols;
-  getmaxyx(stdscr, rows, cols);
-  game->rows = rows;
-  game->cols = cols;
-
-  // allow for function keys to be registered by ncurses.
-  keypad(stdscr, TRUE);
-
-  // set input delay so it is non-blocking.
-  timeout(0);
-
-  // seed rand
-  srand(time(NULL));
-
-}
-
 /*  Draw the snake on the default ncurses window. */
-void draw_snake (struct snake *snake)
+void draw_snake (struct snake *snake, WINDOW *window)
 {
-  attron(COLOR_SNAKE);
+  wattron(window, COLOR_SNAKE);
   while (snake != NULL) {
-    mvaddch(snake->loc->row, snake->loc->col, '*');
+    mvwaddch(window, snake->loc->row, snake->loc->col, '*');
     snake = snake->next;
   }
-  attroff(COLOR_SNAKE);
+  wattroff(window, COLOR_SNAKE);
 }
 
-void draw_food (struct point pt)
+void draw_food (struct point pt, WINDOW *window)
 {
-  attron(COLOR_FOOD);
-  mvaddch(pt.row, pt.col, '*');
-  attroff(COLOR_FOOD);
+  wattron(window, COLOR_FOOD);
+  mvwaddch(window, pt.row, pt.col, '*');
+  wattroff(window, COLOR_FOOD);
 }
 
 /*  Draw the wall on the default ncurses window. */
-void draw_wall (struct game_data *game)
+void draw_wall (struct game_data *game, WINDOW *window)
 {
-  attron(COLOR_WALL);
+  wattron(window, COLOR_WALL);
   int i;
 
   // draw the left and right edges
   for (i=0; i< game->WALL_WD; i++) {
-    mvaddch(0, i, '*');
-    mvaddch(game->WALL_HT-1, i, '*');
+    mvwaddch(window, 0, i, '*');
+    mvwaddch(window, game->WALL_HT-1, i, '*');
   }
 
   // draw top and bottom edges
   for (i=1; i<game->WALL_HT-1; i++) {
-    mvaddch(i, 0, '*');
-    mvaddch(i, game->WALL_WD-1, '*');
+    mvwaddch(window, i, 0, '*');
+    mvwaddch(window, i, game->WALL_WD-1, '*');
   }
 
-  attroff(COLOR_WALL);
+  wattroff(window, COLOR_WALL);
 }
 
 /*  Draw the queued direction of the snake. */
-void draw_direction (Direction queued_dir)
+void draw_direction (Direction queued_dir, WINDOW *window)
 {
     char c;
     switch (queued_dir) {
@@ -202,7 +170,7 @@ void draw_direction (Direction queued_dir)
         c = 'E';
         break;
     }
-    mvaddch(2, 45, c);
+    mvwaddch(window, 2, 45, c);
 }
 
 
@@ -216,11 +184,11 @@ void draw_direction (Direction queued_dir)
     in the initialised segment of snake. */
 struct snake *init_snake (struct snake *next, int row, int col)
 {
-  struct snake *snake = (struct snake *) malloc(sizeof (struct snake));
-  struct point *p = (struct point *) malloc(sizeof (struct point));
+  struct snake *snake = malloc(sizeof (struct snake));
+  struct point *p = malloc(sizeof (struct point));
   p->row = row; p->col = col;
   snake->loc = p;
-  if (next != NULL) snake->next = next;
+  snake->next = next;
   return snake;
 }
 
@@ -337,14 +305,12 @@ int opposites (Direction d1, Direction d2)
 }
 
 
-
-// ------------------------------------------------------------
-// Main.
-// ------------------------------------------------------------
-
-
-void play_game (struct game_data *game)
+void play_game (struct game_data *game, WINDOW *window)
 {
+
+  // Seed rand and set non-blocking input.
+  srand(time(NULL));
+  timeout(0);
 
   // initialise snake.
   struct snake *snake = init_snake(NULL, game->WALL_HT/2, game->WALL_WD/2);
@@ -362,42 +328,51 @@ void play_game (struct game_data *game)
 
   while (1) {
 
-    // process user input. If non-zero value is returned, then the programme
-    // should terminate.
+    // Process input. Update queued directino.
     if (process_input(snake_dir, &queued_dir)) break;
-    draw_direction(queued_dir);
+    draw_direction(queued_dir, window);
 
-    // check if enough time has elapsed to warrant updating the snake.
+    // Check if you should update.
     long int currTime = timems();
     if (currTime - lastUpdate < update_delay(game)) continue;
     lastUpdate = currTime;
 
-    // change direction and move the snake.
+    // Get direction. Move snake and grow in length.
     snake_dir = queued_dir;
-    move_snake(game, &snake, snake_dir, ate_food);
+    move_snake(game, &snake, snake_dir, 0);
     ate_food = 0;
-
-    // if the snake would be inside of its body or a wall, game over.
-    // nb: if the snake tries to move into a wall it ends up moving onto itself
-    // so this handles both cases.
+    
+    // Snake touching itself? Game over, man!
     if (touching(snake->next, snake->loc)) break;
 
-    // check if snake has eaten food.
+    // If Snake has eaten food, randomly generate new food.
     if (touching(snake, &food)) {
       food = randomise_food(game, snake);
       ate_food = 1;
     }
 
-    // clear screen and redraw.
-    clear();
-    draw_snake(snake);
-    draw_food(food);
-    draw_wall(game);
-    refresh();
+    // Clear window and redraw.
+    wclear(window);
+    draw_snake(snake, window);
+    draw_food(food, window);
+    draw_wall(game, window);
+    wrefresh(window);
 
   }
-  endwin();
+
+  // Clean output.
+  wclear(window);
+
+  // Re-enable blocking input.
+  timeout(-1);
+
 }
+
+
+// ------------------------------------------------------------
+// Main.
+// ------------------------------------------------------------
+
 
 int
 main (int argc, char *argv[])
@@ -405,9 +380,16 @@ main (int argc, char *argv[])
   
   // Establish ncurses.
   initscr();
+
+  // Hide cursor and cursor feedback.
   noecho();
   curs_set(FALSE);
+
+  // Enable function keys to be registered by ncurses.
   keypad(stdscr, TRUE);
+
+  // Enable blocking input.
+  timeout(-1);
 
   // Enable colours.
   if (has_colors() == FALSE) {
@@ -416,9 +398,13 @@ main (int argc, char *argv[])
   }
   start_color();
   menu_init_colours();
+  init_pair(1, COLOR_WHITE, COLOR_WHITE); // snake colour
+  init_pair(2, COLOR_CYAN, COLOR_CYAN); // wall colour
+  init_pair(3, COLOR_RED, COLOR_RED); // food colour
 
-  // Create main menu.
-  WINDOW *window = newwin(30, 30, 0, 0);
+  // Create windows for menu and game.
+  WINDOW *window_menu = newwin(30, 30, 0, 0);
+  WINDOW *window_game = newwin(0, 0, 0, 0);
 
   // Allocate memory for menu items.
   ITEM *item1 = malloc(sizeof (ITEM));
@@ -434,13 +420,17 @@ main (int argc, char *argv[])
   ITEM *items[] = { item1, item2, item3 };
   MENU *menu = malloc(sizeof (MENU));
   int num_items = sizeof(items) / sizeof(items[0]);
-  make_menu(menu, window, items, num_items);
+  make_menu(menu, window_menu, items, num_items);
 
-  // Create game data.
+  // Create and set game data.
   struct game_data *game = malloc(sizeof (struct game_data));
   game->WALL_WD = 20;
   game->WALL_HT = 20;
   game->difficulty = 0;
+  int rows, cols;
+  getmaxyx(stdscr, rows, cols);
+  game->rows = rows;
+  game->cols = cols;
 
   // Display menu, get options.
   while (1) {
@@ -450,7 +440,7 @@ main (int argc, char *argv[])
       event = malloc(sizeof (EVENT));
       menu_refresh(menu);
       menu_run(menu, event);
-      EVENT_TYPE type = get_event_type(event);
+      EVENT_TYPE type = event_type(event);
       if (type == EXIT) done = 1;
       else if (type == TEXT_RETURN) done = 2;
       free(event);
@@ -458,15 +448,20 @@ main (int argc, char *argv[])
 
     // User wants to play a game.
     if (done == 2) {
-      play_game(game);
+      game->difficulty = slider_value(item2);
+      wclear(window_menu);
+      play_game(game, window_game);
     }
 
     // User exited. Tidy up and return.
     if (done == 1) {
-      wclear(window);
-      endwin();
+      wclear(window_menu);
+      wclear(window_game);
+      delwin(window_menu);
+      delwin(window_game);
       free(game);   
       free_menu(menu);
+      endwin();
       return 0;
     }
   }

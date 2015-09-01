@@ -53,8 +53,10 @@ void menu_run (MENU *menu, EVENT *event);
 void menu_refresh (MENU *menu);
 void menu_init_colours();
 
-EVENT_TYPE get_event_type(EVENT *event);
-ITEM *get_event_item(EVENT *event);
+int slider_value(ITEM *item);
+
+EVENT_TYPE event_type(EVENT *event);
+ITEM *event_item(EVENT *event);
 
 
 

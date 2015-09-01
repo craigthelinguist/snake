@@ -148,7 +148,7 @@ free_menu (struct menu *menu)
       Event which fired.
  */
 enum event_type
-get_event_type (struct menu_event *event)
+event_type (struct menu_event *event)
 {
   return event->tag;
 }
@@ -159,9 +159,20 @@ get_event_type (struct menu_event *event)
       Event which fired.
   */
 struct menu_item *
-get_event_item (struct menu_event *event)
+event_item (struct menu_event *event)
 {
   return event->elem;
+}
+
+int
+slider_value (struct menu_item *item)
+{
+  if (item->tag != SLIDER) {
+    endwin();
+    fprintf(stderr, "Trying to get slider value from something which isn't a slider.");
+    exit(1);
+  }
+  return (item->item).slider->pos;
 }
 
   /*
