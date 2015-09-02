@@ -67,7 +67,9 @@ void draw_direction (Direction, WINDOW *);
 
 // Snake-related functions.
 struct snake *init_snake (struct snake *prev, int row, int col);
-void move_snake (struct game_data *game, struct snake **head, Direction dir, int grow_snake);
+struct point new_pos (struct game_data *, struct snake *, Direction dir);
+void move_snake (struct game_data *game, struct snake *head, struct point);
+void grow_snake (struct game_data *game, struct snake **head, struct point);
 int touching (struct snake *head, struct point *p);
 int opposites (Direction d1, Direction d2);
 
@@ -203,14 +205,51 @@ int touching (struct snake *head, struct point *p)
   return 0;
 }
 
+/*  Prepend a new head to the snake. Update the pointer to the head of the
+    snake. */
+void
+grow_snake (struct game_data *game, struct snake **snake, struct point newpos)
+{
+
+  // figure out where the snake should now be.
+  struct snake *head = *snake;
+  int newRow = newpos.row;
+  int newCol = newpos.col;
+
+  // If the snake has grown, prepend the new segment to the head of the snake.
+  struct snake *new_head = init_snake(head, newRow, newCol);
+  *snake = new_head;
+  
+}
+
 /*  Move the snake one step in the specified direction. Returns a non-zero
     value if the snake moved successfully without touching itself or a wall.
     Otherwise returns zero.  */
 void
-move_snake (struct game_data *game, struct snake **snake, Direction dir, int should_grow) {
+move_snake (struct game_data *game, struct snake *head, struct point newpos) {
   
-  // figure out where the snake should now be.
-  struct snake *head = *snake;
+  int newRow = newpos.row;
+  int newCol = newpos.col;
+  
+  // Shift each segment of the snake along one.
+  int currRow, currCol;
+  while (head != NULL) {
+    currRow = head->loc->row;
+    currCol = head->loc->col;
+    head->loc->row = newRow;
+    head->loc->col = newCol;
+    newRow = currRow;
+    newCol = currCol;
+    head = head->next;
+  }
+
+}
+
+struct point
+new_pos (struct game_data *game, struct snake *head, Direction dir)
+{
+  
+  // Figure out where the snake should now be.
   int newRow = head->loc->row;
   int newCol = head->loc->col;
   switch (dir) {
@@ -231,24 +270,9 @@ move_snake (struct game_data *game, struct snake **snake, Direction dir, int sho
       break;
   }
   
-  // If the snake has grown, prepend the new segment to the head of the snake.
-  if (should_grow) {
-    struct snake *new_head = init_snake(head, newRow, newCol);
-    *snake = new_head;
-    return;
-  }
-  
-  // Otherwise, shift each segment of the snake along one.
-  int currRow, currCol;
-  while (head != NULL) {
-    currRow = head->loc->row;
-    currCol = head->loc->col;
-    head->loc->row = newRow;
-    head->loc->col = newCol;
-    newRow = currRow;
-    newCol = currCol;
-    head = head->next;
-  }
+  // Return as a point.
+  struct point p = {newRow, newCol};
+  return p;
 
 }
 
@@ -312,7 +336,7 @@ void play_game (struct game_data *game, WINDOW *window)
   srand(time(NULL));
   timeout(0);
 
-  // initialise snake.
+  // Initialise snake.
   struct snake *snake = init_snake(NULL, game->WALL_HT/2, game->WALL_WD/2);
   snake = init_snake(snake, game->WALL_HT/2 + 1, game->WALL_WD/2);
   snake = init_snake(snake, game->WALL_HT/2 + 1, game->WALL_WD/2);
@@ -339,8 +363,12 @@ void play_game (struct game_data *game, WINDOW *window)
 
     // Get direction. Move snake and grow in length.
     snake_dir = queued_dir;
-    move_snake(game, &snake, snake_dir, 0);
-    ate_food = 0;
+    struct point newpos = new_pos(game, snake, snake_dir);
+    if (ate_food) {
+      grow_snake(game, &snake, newpos);
+      ate_food = 0;        
+    }
+    else move_snake(game, snake, newpos);
     
     // Snake touching itself? Game over, man!
     if (touching(snake->next, snake->loc)) break;
