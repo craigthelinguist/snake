@@ -199,6 +199,7 @@ del_snake (struct snake *head, int recursive)
 {
 
   if (!recursive) {
+    free(head->loc);
     free(head);
     return;  
   }
