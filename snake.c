@@ -38,7 +38,7 @@ typedef enum {NORTH, EAST, SOUTH, WEST} Direction;
 
 // Each piece of the snake is the element of a linked list.
 struct snake {
-  struct point *loc;
+  struct point *loc; // This could be made better by eliminating the indirection.
   struct snake *next;
 };
 
@@ -193,6 +193,27 @@ struct snake *init_snake (struct snake *next, int row, int col)
   snake->next = next;
   return snake;
 }
+
+void
+del_snake (struct snake *head, int recursive)
+{
+
+  if (!recursive) {
+    free(head);
+    return;  
+  }
+
+  struct snake *next;
+  while (head != NULL) {
+    next = head->next;
+    free(head->loc);
+    free(head);
+    head = next;
+  }
+
+}
+
+
 
 /*  Check to see if the body of the snake is touching the specified
     row and col. */
@@ -387,6 +408,9 @@ void play_game (struct game_data *game, WINDOW *window)
     wrefresh(window);
 
   }
+
+  // Free memory.
+  del_snake(snake, 1);
 
   // Clean output.
   wclear(window);
